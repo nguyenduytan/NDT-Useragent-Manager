@@ -26,10 +26,6 @@ For example, Chrome on Windows is available at:
 https://cdn.jsdelivr.net/gh/nguyenduytan/NDT-Useragent-Manager@main/data/popup/browsers/chrome-windows.json
 ```
 
-## Data source and attribution
-
-Profile data is synchronized from [ray-lothian/UserAgent-Switcher](https://github.com/ray-lothian/UserAgent-Switcher). Its MPL-2.0 license is copied into this repository during each synchronization as `UPSTREAM-LICENSE-MPL-2.0.txt`.
-
 ## Maintainer
 
 Tony Nguyễn — [nguyenduytan.com](https://nguyenduytan.com)
