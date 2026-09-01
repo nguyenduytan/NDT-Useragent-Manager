@@ -1,0 +1,30 @@
+name: Sync User-Agent data
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download upstream data
+        run: |
+          git clone --depth 1 https://github.com/ray-lothian/UserAgent-Switcher.git upstream
+          rm -rf data
+          mkdir -p data
+          cp -R upstream/v3/data/popup data/popup
+          cp upstream/LICENSE UPSTREAM-LICENSE-MPL-2.0.txt
+          printf '{\n  "source": "https://github.com/ray-lothian/UserAgent-Switcher",\n  "syncedAt": "%s"\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > upstream.json
+      - name: Commit changes
+        run: |
+          git config user.name "NDT User-Agent Data Bot"
+          git config user.email "actions@github.com"
+          git add data upstream.json UPSTREAM-LICENSE-MPL-2.0.txt
+          git diff --cached --quiet || git commit -m "chore: sync user-agent data"
+          git push
