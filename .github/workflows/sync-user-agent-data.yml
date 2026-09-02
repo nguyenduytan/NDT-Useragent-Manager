@@ -3,7 +3,7 @@ name: Sync User-Agent data
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 2 * * *'
+    - cron: '7 0 * * *'
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Download upstream data
         run: |
           git clone --depth 1 https://github.com/ray-lothian/UserAgent-Switcher.git upstream
