@@ -8,23 +8,63 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: user-agent-data-sync-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - name: Download upstream data
+      - uses: actions/checkout@v6
+      - name: Compare upstream data
+        id: compare
         run: |
+          set -euo pipefail
           git clone --depth 1 https://github.com/ray-lothian/UserAgent-Switcher.git upstream
+          if diff -qr data/popup upstream/v3/data/popup >/dev/null && cmp -s UPSTREAM-LICENSE-MPL-2.0.txt upstream/LICENSE; then
+            echo "data_changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "data_changed=true" >> "$GITHUB_OUTPUT"
+          fi
+          last_checked=$(jq -r '.lastCheckedAt // .syncedAt // empty' upstream.json)
+          now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          if [ -z "$last_checked" ] || [ $(( $(date -u +%s) - $(date -d "$last_checked" +%s) )) -ge 2592000 ]; then
+            echo "heartbeat=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "heartbeat=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "revision=$(git -C upstream rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "checked_at=$now" >> "$GITHUB_OUTPUT"
+      - name: Copy changed data
+        if: steps.compare.outputs.data_changed == 'true'
+        run: |
           rm -rf data
           mkdir -p data
           cp -R upstream/v3/data/popup data/popup
           cp upstream/LICENSE UPSTREAM-LICENSE-MPL-2.0.txt
-          printf '{\n  "source": "https://github.com/ray-lothian/UserAgent-Switcher",\n  "syncedAt": "%s"\n}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > upstream.json
-      - name: Commit changes
+      - name: Update sync metadata
+        if: steps.compare.outputs.data_changed == 'true' || steps.compare.outputs.heartbeat == 'true'
+        env:
+          DATA_CHANGED: ${{ steps.compare.outputs.data_changed }}
+          REVISION: ${{ steps.compare.outputs.revision }}
+          CHECKED_AT: ${{ steps.compare.outputs.checked_at }}
         run: |
+          set -euo pipefail
+          previous_synced=$(jq -r '.syncedAt // empty' upstream.json)
+          if [ "$DATA_CHANGED" = "true" ]; then previous_synced="$CHECKED_AT"; fi
+          jq -n --arg source "https://github.com/ray-lothian/UserAgent-Switcher" --arg revision "$REVISION" --arg syncedAt "$previous_synced" --arg lastCheckedAt "$CHECKED_AT" '{source: $source, upstreamRevision: $revision, syncedAt: $syncedAt, lastCheckedAt: $lastCheckedAt}' > upstream.json
+      - name: Commit synchronization result
+        if: steps.compare.outputs.data_changed == 'true' || steps.compare.outputs.heartbeat == 'true'
+        run: |
+          set -euo pipefail
           git config user.name "NDT User-Agent Data Bot"
           git config user.email "actions@github.com"
           git add data upstream.json UPSTREAM-LICENSE-MPL-2.0.txt
-          git diff --cached --quiet || git commit -m "chore: sync user-agent data"
+          git diff --cached --quiet && exit 0
+          if [ "${{ steps.compare.outputs.data_changed }}" = "true" ]; then
+            git commit -m "chore: sync User-Agent data"
+          else
+            git commit -m "chore: record User-Agent data check"
+          fi
           git push
