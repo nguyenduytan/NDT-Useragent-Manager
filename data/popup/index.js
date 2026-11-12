@@ -44,7 +44,8 @@ document.querySelectorAll('[data-localize]').forEach(e => {
   }
 });
 
-document.body.dataset.android = navigator.userAgent.indexOf('Android') !== -1;
+// Mobile view for phone form factors (narrow-screen check is done by CSS media queries)
+document.body.dataset.android = /Android|iPhone|iPod/i.test(navigator.userAgent);
 
 const map = {};
 
@@ -107,7 +108,13 @@ function get(path) {
   });
 }
 
+let updateId = 0;
+
+// Mobile view renders fewer agents than desktop (see update())
+const MOBILE_AGENT_LIMIT = 50;
+
 function update(ua) {
+  const id = ++updateId;
   const browser = document.getElementById('browser').value;
   const os = document.getElementById('os').value;
 
@@ -122,10 +129,19 @@ function update(ua) {
       console.error('CACHE_ERROR', e);
       return [];
     }).then(list => {
+      // A slower previous selection must not append rows to the current list.
+      if (id !== updateId) {
+        return;
+      }
       if (list) {
         const fragment = document.createDocumentFragment();
         let radio;
         list = sort(list);
+        const fullLength = list.length;
+        // Mobile view renders fewer rows to keep the popup fast to build, filter and scroll
+        if (document.body.dataset.android === 'true' && list.length > MOBILE_AGENT_LIMIT) {
+          list = list.slice(0, MOBILE_AGENT_LIMIT);
+        }
         list.forEach((o, n) => {
           const clone = document.importNode(t.content, true);
           const num = clone.querySelector('td:nth-child(1)');
@@ -152,6 +168,7 @@ function update(ua) {
           fragment.appendChild(clone);
         });
         tbody.appendChild(fragment);
+        filter();
         if (radio) {
           radio.checked = true;
           radio.scrollIntoView({
@@ -159,7 +176,7 @@ function update(ua) {
             inline: 'nearest'
           });
         }
-        document.getElementById('custom').placeholder = uiLanguage.getMessage('filterAmong', [list.length]);
+        document.getElementById('custom').placeholder = uiLanguage.getMessage('filterAmong', [fullLength]);
         [...document.getElementById('os').querySelectorAll('option')].forEach(option => {
           option.disabled = (map.matching[browser.toLowerCase()] || []).indexOf(option.value.toLowerCase()) === -1;
         });
@@ -169,7 +186,9 @@ function update(ua) {
       }
     // FF 55.0 does not support finally
     }).catch(() => {}).then(() => {
-      parent.dataset.loading = false;
+      if (id === updateId) {
+        parent.dataset.loading = false;
+      }
     });
 }
 
@@ -261,11 +280,21 @@ document.getElementById('list').addEventListener('click', ({target}) => {
   }
 });
 
-document.getElementById('custom').addEventListener('keyup', ({target}) => {
-  const value = target.value;
+function filter() {
+  const value = document.getElementById('custom').value.toLowerCase();
+  let matched = 0;
   [...document.querySelectorAll('#list tbody tr')]
-    .forEach(tr => tr.dataset.matched = tr.textContent.toLowerCase().indexOf(value.toLowerCase()) !== -1);
-});
+    .forEach(tr => {
+      const m = tr.textContent.toLowerCase().indexOf(value) !== -1;
+      tr.dataset.matched = m;
+      if (m) {
+        matched += 1;
+      }
+    });
+  // hide all rows -> show the no-match message
+  document.getElementById('list').dataset.filtered = value && matched === 0;
+}
+document.getElementById('custom').addEventListener('input', filter);
 
 chrome.storage.onChanged.addListener(prefs => {
   if (prefs.ua) {
